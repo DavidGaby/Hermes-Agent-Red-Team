@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+venv/
+.env
+.hermes/cache/
+.hermes/sessions/
+*.log
+templates/__pycache__/
+*.db
+*.sqlite
+.DS_Store

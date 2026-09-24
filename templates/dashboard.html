@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetCut++ Network Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0f1a;
+            --bg-secondary: #111827;
+            --bg-tertiary: #1e293b;
+            --accent: #00d4aa;
+            --accent-dim: #00d4aa33;
+            --accent-glow: #00d4aa88;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border: #1e293b;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --success: #22c55e;
+            --info: #3b82f6;
+        }
+        
+        [data-theme="light"] {
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #f1f5f9;
+            --accent: #00b894;
+            --accent-dim: #00b89422;
+            --accent-glow: #00b89444;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --border: #e2e8f0;
+            --danger: #dc2626;
+            --warning: #d97706;
+            --success: #16a34a;
+            --info: #2563eb;
+        }
+        
+        * {
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            transition: background 0.3s ease, color 0.3s ease;
+        }
+        
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-secondary); }
+        ::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent-glow); }
+        
+        /* Glow effects */
+        .glow-accent { box-shadow: 0 0 20px var(--accent-glow), 0 0 40px var(--accent-glow); }
+        .glow-accent-subtle { box-shadow: 0 0 10px var(--accent-glow); }
+        
+        /* Animations */
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+        @keyframes slide-up {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes scan-line {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+        
+        .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+        .animate-slide-up { animation: slide-up 0.4s ease-out forwards; }
+        .animate-spin-slow { animation: spin-slow 3s linear infinite; }
+        .animate-fade-in { animation: fade-in 0.3s ease-out; }
+        
+        .scan-line::after {
+            content: '';
+            position: absolute;
+            top: 0; left: -100%;
+            width: 50%; height: 100%;
+            background: linear-gradient(90deg, transparent, var(--accent-dim), transparent);
+            animation: scan-line 2s linear infinite;
+            pointer-events: none;
+        }
+        
+        /* Table styles */
+        .device-row { transition: all 0.2s ease; }
+        .device-row:hover { background: var(--accent-dim) !important; }
+        .device-row.new { animation: slide-up 0.3s ease-out; }
+        
+        /* Status indicators */
+        .status-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            display: inline-block; margin-right: 8px;
+        }
+        .status-online { background: var(--success); box-shadow: 0 0 8px var(--success); }
+        .status-recent { background: var(--warning); box-shadow: 0 0 8px var(--warning); }
+        .status-offline { background: var(--text-muted); }
+        
+        /* Signal bars */
+        .signal-bars { display: flex; gap: 2px; align-items: flex-end; height: 16px; }
+        .signal-bar { width: 4px; background: var(--text-muted); border-radius: 1px; transition: all 0.2s; }
+        .signal-bar.active { background: var(--accent); }
+        .signal-bar-1 { height: 20%; }
+        .signal-bar-2 { height: 40%; }
+        .signal-bar-3 { height: 60%; }
+        .signal-bar-4 { height: 80%; }
+        .signal-bar-5 { height: 100%; }
+        
+        /* Vendor badge */
+        .vendor-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 4px 10px; border-radius: 9999px;
+            font-size: 11px; font-weight: 600; text-transform: uppercase;
+            background: var(--bg-tertiary); border: 1px solid var(--border);
+        }
+        
+        /* Device type icon */
+        .device-type { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+        
+        /* Progress ring */
+        .progress-ring { transform: rotate(-90deg); }
+        .progress-ring-bg { fill: none; stroke: var(--border); stroke-width: 4; }
+        .progress-ring-fill { fill: none; stroke: var(--accent); stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset 0.3s ease; }
+        
+        /* Tooltip */
+        .tooltip { position: relative; }
+        .tooltip::after {
+            content: attr(data-tip);
+            position: absolute; bottom: 120%; left: 50%; transform: translateX(-50%);
+            background: var(--bg-tertiary); color: var(--text-primary);
+            padding: 6px 10px; border-radius: 6px; font-size: 11px;
+            white-space: nowrap; opacity: 0; visibility: hidden;
+            border: 1px solid var(--border); z-index: 100;
+            transition: all 0.2s ease;
+        }
+        .tooltip:hover::after { opacity: 1; visibility: visible; bottom: 100%; }
+        
+        /* Empty state */
+        .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+        .empty-state svg { width: 64px; height: 64px; margin-bottom: 16px; opacity: 0.5; }
+        
+        /* Modal */
+        .modal-overlay { background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); }
+        .modal-content { background: var(--bg-secondary); border: 1px solid var(--border); }
+        
+        /* Reduced motion */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+        }
+    </style>
+</head>
+<body data-theme="dark">
+    <div class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="border-b border-[var(--border)] bg-[var(--bg-secondary)]/80 backdrop-blur-lg sticky top-0 z-50">
+            <div class="max-w-full mx-auto px-4 py-4">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--accent)] to-[var(--info)] flex items-center justify-center glow-accent-subtle">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0a0f1a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                                <path d="M6 9h12M6 15h8M6 12h10"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 class="text-xl font-bold font-mono tracking-tight">NetCut++</h1>
+                            <p class="text-xs text-[var(--text-muted)]">Network Intelligence Platform</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center gap-3">
+                        <!-- Network Info Badge -->
+                        <div class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border)]">
+                            <span class="text-xs text-[var(--text-muted)]">Network:</span>
+                            <span id="networkInfo" class="font-mono text-sm font-medium text-[var(--accent)]">Detecting...</span>
+                        </div>
+                        
+                        <!-- Scan Status -->
+                        <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border)]">
+                            <span id="scanStatusDot" class="status-dot status-offline"></span>
+                            <span id="scanStatus" class="font-mono text-sm font-medium">Idle</span>
+                        </div>
+                        
+                        <!-- Theme Toggle -->
+                        <button id="themeToggle" class="tooltip p-2 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border)] hover:bg-[var(--accent-dim)] transition-all" data-tip="Toggle theme">
+                            <svg id="iconSun" class="w-5 h-5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                            </svg>
+                            <svg id="iconMoon" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Scan Progress Bar -->
+                <div id="scanProgressContainer" class="mt-4 h-1.5 bg-[var(--bg-tertiary)] rounded-full overflow-hidden hidden">
+                    <div id="scanProgressBar" class="h-full bg-gradient-to-r from-[var(--accent)] to-[var(--info)] rounded-full animate-pulse-glow" style="width: 0%;"></div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-1 max-w-full mx-auto w-full px-4 py-6">
+            <!-- Stats Grid -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="statsGrid">
+                <div class="stat-card bg-[var(--bg-secondary)] border border-[var(--border)] rounded-2xl p-5 animate-slide-up" style="animation-delay: 0ms;">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs text-[var(--text-muted)] uppercase tracking-wider">Total Devices</p>
+                            <p id="statTotal" class="text-3xl font-bold font-mono text-[var(--text-primary)] mt-1">0</p>
+                        </div>
+                        <div class="w-12 h-12 rounded-xl bg-[var(--accent-dim)] flex items-center justify-center">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2">
+                                <rect x="2" y="2" width="20" height="20" rx="5"/><path d="M6 9h12M6 15h8M6 12h10"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="stat-card bg-[var(--bg-secondary)] border border-[var(--border)] rounded-2xl p-5 animate-slide-up" style="animation-delay: 50ms;">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs text-[var(--text-muted)] uppercase tracking-wider">Online Now</p>
+                            <p id="statOnline" class="text-3xl font-bold font-mono text-[var(--success)] mt-1">0</p>
+                        </div>
+                        <div class="w-12 h-12 rounded-xl bg-[#22c55e22] flex items-center justify-center">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12l2 2 4-4"/></svg>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="stat-card bg-[var(--bg-secondary)] border border-[var(--border)] rounded-2xl p-5 animate-slide-up" style="animation-delay: 100ms;">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs text-[var(--text-muted)] uppercase tracking-wider">New Devices</p>
+                            <p id="statNew" class="text-3xl font-bold font-mono text-[var(--warning)] mt-1">0</p>
+                        </div>
+                        <div class="w-12 h-12 rounded-xl bg-[#f59e0b22] flex items-center justify-center">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M12 5v14M19 12H5"/></svg>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="stat-card bg-[var(--bg-secondary)] border border-[var(--border)] rounded-2xl p-5 animate-slide-up" style="animation-delay: 150ms;">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs text-[var(--text-muted)] uppercase tracking-wider">Scan Rate</p>
+                            <p id="statRate" class="text-3xl font-bold font-mono text-[var(--info)] mt-1">--/min</p>
+                        </div>
+                        <div class="w-12 h-12 rounded-xl bg-[#3b82f622] flex items-center justify-center">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filter & Search Bar -->
+            <div class="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-2xl p-4 mb-6 animate-slide-up" style="animation-delay: 200ms;">
+                <div class="flex flex-col md:flex-row gap-4">
+                    <div class="relative flex-1 max-w-md">
+                        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                        <input type="text" id="searchInput" placeholder="Search IP, MAC, Vendor, Hostname..." class="w-full pl-10 pr-4 py-2.5 bg-[var(--bg-tertiary)] border border-[var(--border)] rounded-xl text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent transition-all">
+                    </div>
+                    
+                    <div class="flex flex-wrap gap-2">
+                        <select id="filterVendor" class="px-4 py-2.5 bg-[var(--bg-tertiary)] border border-[var(--border)] rounded-xl text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent cursor-pointer">
+                            <option value="">All Vendors</option>
+                        </div>
+                        <select id="filterStatus" class="px-4 py-2.5 bg-[var(--bg-tertiary)] border border-[var(--border)] rounded-xl text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent cursor-pointer">
+                            <option value="">All Status</option>
+                            <option value="online">Online</option>
+                            <option value="recent">Recent</option>
+                            <option value="offline">Offline</option>
+                        </select>
+                        <select id="sortBy" class="px-4 py-2.5 bg-[var(--bg-tertiary)] border border-[var(--border)] rounded-xl text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent cursor-pointer">
+                            <option value="ip">Sort by IP</option>
+                            <option value="mac">Sort by MAC</option>
+                            <option value="vendor">Sort by Vendor</option>
+                            <option value="signal">Sort by Signal</option>
+                            <option value="last_seen">Sort by Last Seen</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Table Section -->
+            <div class="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-2xl overflow-hidden animate-slide-up" style="animation-delay: 250ms;">
+                <div class="px-5 py-4 border-b border-[var(--border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-[var(--accent)] animate-pulse-glow"></span>
+                        Live Device Table
+                    </h2>
+                    <div class="flex items-center gap-3">
+                        <button id="exportBtn" class="tooltip px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border)] hover:bg-[var(--accent-dim)] transition-all flex items-center gap-1.5" data-tip="Export CSV">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                            Export
+                        </button>
+                        <button id="startBtn" class="scan-btn px-4 py-2 rounded-xl font-semibold text-sm flex items-center gap-2 bg-gradient-to-r from-[var(--success)] to-[#16a34a] text-white hover:from-[#16a34a] hover:to-[#15803d] transition-all glow-accent-subtle">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            <span>Start Scan</span>
+                        </button>
+                        <button id="stopBtn" class="scan-btn px-4 py-2 rounded-xl font-semibold text-sm flex items-center gap-2 bg-[var(--bg-tertiary)] border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--danger)] hover:border-[var(--danger)] hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                            <span>Stop Scan</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full" id="deviceTable">
+                        <thead>
+                            <tr class="text-left text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider bg-[var(--bg-tertiary)]">
+                                <th class="px-5 py-3.5 w-8"></th>
+                                <th class="px-5 py-3.5 cursor-pointer hover:text-[var(--accent)] transition-colors" data-sort="ip">IP Address</th>
+                                <th class="px-5 py-3.5 cursor-pointer hover:text-[var(--accent)] transition-colors" data-sort="mac">MAC Address</th>
+                                <th class="px-5 py-3.5 cursor-pointer hover:text-[var(--accent)] transition-colors" data-sort="vendor">Vendor</th>
+                                <th class="px-5 py-3.5 cursor-pointer hover:text-[var(--accent)] transition-colors" data-sort="type">Type</th>
+                                <th class="px-5 py-3.5 cursor-pointer hover:text-[var(--accent)] transition-colors" data-sort="ssid">SSID / Network</th>
+                                <th class="px-5 py-3.5 cursor-pointer hover:text-[var(--accent)] transition-colors" data-sort="signal">Signal</th>
+                                <th class="px-5 py-3.5 cursor-pointer hover:text-[var(--accent)] transition-colors" data-sort="hostname">Hostname</th>
+                                <th class="px-5 py-3.5 cursor-pointer hover:text-[var(--accent)] transition-colors" data-sort="last_seen">Last Seen</th>
+                                <th class="px-5 py-3.5 w-24"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="deviceTableBody" class="divide-y divide-[var(--border)]">
+                            <!-- Empty state -->
+                            <tr id="emptyRow">
+                                <td colspan="10" class="empty-state">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mx-auto">
+                                        <rect x="2" y="2" width="20" height="20" rx="5"/><path d="M6 9h12M6 15h8M6 12h10"/>
+                                    </svg>
+                                    <p class="font-medium">No devices discovered</p>
+                                    <p class="text-sm mt-1">Click "Start Scan" to begin network discovery</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Network Details Panel (Mobile) -->
+            <div id="detailPanel" class="fixed bottom-0 left-0 right-0 bg-[var(--bg-secondary)] border-t border-[var(--border)] rounded-t-2xl p-4 md:hidden transform translate-y-full transition-transform duration-300 z-50" style="max-height: 60vh; overflow-y: auto;">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-semibold" id="detailTitle">Device Details</h3>
+                    <button id="closeDetail" class="p-2 rounded-lg hover:bg-[var(--bg-tertiary)]"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                </div>
+                <div id="detailContent"></div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="border-t border-[var(--border)] bg-[var(--bg-secondary)]/50 px-4 py-4">
+            <div class="max-w-full mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-sm text-[var(--text-muted)]">
+                <span>NetCut++ v2.0 — Real-time Network Intelligence</span>
+                <span class="font-mono" id="footerTime">Last update: --:--:--</span>
+                <span class="flex items-center gap-2">
+                    <span class="status-dot status-online animate-pulse-glow"></span>
+                    <span id="connectionStatus">Connected</span>
+                </span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Device Detail Modal (Desktop) -->
+    <div id="deviceModal" class="fixed inset-0 modal-overlay hidden items-center justify-center p-4 z-50">
+        <div class="modal-content rounded-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto animate-slide-up">
+            <div class="p-5 border-b border-[var(--border)] flex items-center justify-between">
+                <h3 class="font-semibold" id="modalTitle">Device Details</h3>
+                <button id="closeModal" class="p-2 rounded-lg hover:bg-[var(--bg-tertiary)]"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+            </div>
+            <div class="p-5" id="modalContent"></div>
+        </div>
+    </div>
+
+    <script>
+        // ============ STATE ============
+        let ws = null;
+        let devices = new Map(); // ip -> device data
+        let scanInterval = null;
+        let scanStartTime = null;
+        let devicesThisMinute = 0;
+        let lastScanCount = 0;
+        const VENDOR_DB = {};
+        const DEVICE_TYPES = {
+            'Apple': { icon: '📱', type: 'Mobile', color: '#00d4aa' },
+            'Cisco': { icon: '🌐', type: 'Network', color: '#3b82f6' },
+            'VMware': { icon: '💻', type: 'Virtual', color: '#8b5cf6' },
+            'Xen/QEMU': { icon: '💻', type: 'Virtual', color: '#8b5cf6' },
+            'Raspberry Pi': { icon: '🍓', type: 'IoT', color: '#f59e0b' },
+            'Intel': { icon: '🖥️', type: 'Computer', color: '#00d4aa' },
+            'Dell': { icon: '🖥️', type: 'Computer', color: '#00d4aa' },
+            'Unknown': { icon: '❓', type: 'Unknown', color: '#64748b' }
+        };
+
+        // ============ UTILITIES ============
+        const $ = (sel) => document.querySelector(sel);
+        const $$ = (sel) => document.querySelectorAll(sel);
+        
+        function formatSignal(rssi) {
+            if (rssi === null || rssi === undefined || rssi === '') return { bars: 0, class: '' };
+            const abs = Math.abs(rssi);
+            if (abs <= 30) return { bars: 5, class: 'text-[var(--success)]' };
+            if (abs <= 50) return { bars: 4, class: 'text-[var(--success)]' };
+            if (abs <= 60) return { bars: 3, class: 'text-[var(--warning)]' };
+            if (abs <= 70) return { bars: 2, class: 'text-[var(--warning)]' };
+            if (abs <= 80) return { bars: 1, class: 'text-[var(--danger)]' };
+            return { bars: 0, class: 'text-[var(--text-muted)]' };
+        }
+        
+        function renderSignalBars(bars) {
+            let html = '<div class="signal-bars">';
+            for (let i = 1; i <= 5; i++) {
+                const active = i <= bars ? 'active' : '';
+                html += `<div class="signal-bar signal-bar-${i} ${active}"></div>`;
+            }
+            html += '</div>';
+            return html;
+        }
+        
+        function getVendorClass(vendor) {
+            const v = vendor.toLowerCase();
+            if (v.includes('apple')) return 'bg-[#00d4aa22] text-[var(--accent)] border-[var(--accent)]/30';
+            if (v.includes('cisco')) return 'bg-[#3b82f622] text-[#3b82f6] border-[#3b82f6]/30';
+            if (v.includes('vmware') || v.includes('xen') || v.includes('qemu')) return 'bg-[#8b5cf622] text-[#8b5cf6] border-[#8b5cf6]/30';
+            if (v.includes('raspberry') || v.includes('pi')) return 'bg-[#f59e0b22] text-[#f59e0b] border-[#f59e0b]/30';
+            if (v.includes('intel') || v.includes('dell')) return 'bg-[#00d4aa22] text-[var(--accent)] border-[var(--accent)]/30';
+            return 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border-[var(--border)]';
+        }
+        
+        function getDeviceTypeInfo(vendor) {
+            for (const [key, val] of Object.entries(DEVICE_TYPES)) {
+                if (vendor.toLowerCase().includes(key.toLowerCase())) return val;
+            }
+            return DEVICE_TYPES['Unknown'];
+        }
+        
+        function timeAgo(timestamp) {
+            const now = new Date();
+            const then = new Date(timestamp);
+            const diff = Math.floor((now - then) / 1000);
+            if (diff < 5) return 'Just now';
+            if (diff < 60) return `${diff}s ago`;
+            if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+            return `${Math.floor(diff/86400)}d ago`;
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ============ THEME ============
+        function initTheme() {
+            const saved = localStorage.getItem('theme') || 'dark';
+            document.body.dataset.theme = saved;
+            updateThemeIcons(saved);
+        }
+        
+        function updateThemeIcons(theme) {
+            $('#iconSun').classList.toggle('hidden', theme === 'dark');
+            $('#iconMoon').classList.toggle('hidden', theme === 'light');
+        }
+        
+        $('#themeToggle').addEventListener('click', () => {
+            const newTheme = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
+            document.body.dataset.theme = newTheme;
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcons(newTheme);
+        });
+
+        // ============ WEBSOCKET ============
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                $('#connectionStatus').textContent = 'Connected';
+                $('#connectionStatus').nextElementSibling?.classList?.remove('status-offline');
+                $('#connectionStatus').previousElementSibling?.classList?.add('status-online');
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'devices') {
+                    updateDeviceTable(data.data);
+                }
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket disconnected, reconnecting...');
+                $('#connectionStatus').textContent = 'Reconnecting...';
+                $('#connectionStatus').previousElementSibling?.classList?.remove('status-online');
+                $('#connectionStatus').previousElementSibling?.classList?.add('status-offline');
+                setTimeout(connectWebSocket, 3000);
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        // ============ DEVICE TABLE ============
+        function updateDeviceTable(deviceList) {
+            const tbody = $('#deviceTableBody');
+            const emptyRow = $('#emptyRow');
+            
+            if (deviceList.length === 0) {
+                emptyRow.style.display = '';
+                return;
+            }
+            emptyRow.style.display = 'none';
+            
+            // Get current filter/sort values
+            const searchTerm = $('#searchInput').value.toLowerCase();
+            const vendorFilter = $('#filterVendor').value;
+            const statusFilter = $('#filterStatus').value;
+            const sortBy = $('#sortBy').value;
+            
+            // Filter and sort
+            let filtered = deviceList.filter(d => {
+                if (searchTerm && !Object.values(d).some(v => String(v).toLowerCase().includes(searchTerm))) return false;
+                if (vendorFilter && d.vendor !== vendorFilter) return false;
+                const status = getDeviceStatus(d.last_seen);
+                if (statusFilter && status !== statusFilter) return false;
+                return true;
+            });
+            
+            filtered.sort((a, b) => {
+                let av = a[sortBy], bv = b[sortBy];
+                if (sortBy === 'ip') {
+                    av = av.split('.').reduce((acc, oct) => acc * 256 + parseInt(oct), 0);
+                    bv = bv.split('.').reduce((acc, oct) => acc * 256 + parseInt(oct), 0);
+                }
+                if (av < bv) return -1;
+                if (av > bv) return 1;
+                return 0;
+            });
+            
+            // Update vendor filter options
+            updateVendorFilter(deviceList);
+            
+            // Render rows
+            tbody.innerHTML = '';
+            filtered.forEach((device, idx) => {
+                const tr = document.createElement('tr');
+                tr.className = 'device-row';
+                tr.dataset.ip = device.ip;
+                
+                const status = getDeviceStatus(device.last_seen);
+                const statusClass = status === 'online' ? 'status-online' : status === 'recent' ? 'status-recent' : 'status-offline';
+                const signal = formatSignal(device.rssi);
+                const typeInfo = getDeviceTypeInfo(device.vendor);
+                const vendorClass = getVendorClass(device.vendor);
+                
+                tr.innerHTML = `
+                    <td class="px-5 py-3">
+                        <span class="status-dot ${statusClass}"></span>
+                    </td>
+                    <td class="px-5 py-3 font-mono text-sm">${escapeHtml(device.ip)}</td>
+                    <td class="px-5 py-3 font-mono text-sm text-[var(--text-secondary)]">${escapeHtml(device.mac)}</td>
+                    <td class="px-5 py-3">
+                        <span class="vendor-badge ${vendorClass}">${escapeHtml(device.vendor || 'Unknown')}</span>
+                    </td>
+                    <td class="px-5 py-3 text-center">
+                        <div class="device-type mx-auto" style="background: ${typeInfo.color}22; color: ${typeInfo.color};" title="${typeInfo.type}">
+                            ${typeInfo.icon}
+                        </div>
+                    </td>
+                    <td class="px-5 py-3">
+                        <span class="font-mono text-sm text-[var(--text-secondary)]">${escapeHtml(device.ssid || '—')}</span>
+                    </td>
+                    <td class="px-5 py-3 text-center">
+                        ${renderSignalBars(signal.bars)}
+                        <span class="ml-2 font-mono text-xs ${signal.class}">${device.rssi !== undefined && device.rssi !== '' ? device.rssi + ' dBm' : '—'}</span>
+                    </td>
+                    <td class="px-5 py-3 font-mono text-sm">${escapeHtml(device.hostname || '—')}</td>
+                    <td class="px-5 py-3 font-mono text-sm text-[var(--text-secondary)]">${escapeHtml(device.last_seen)} <span class="text-[var(--text-muted)]">(${timeAgo(device.last_seen)})</span></td>
+                    <td class="px-5 py-3 text-center">
+                        <button class="detail-btn p-2 rounded-lg hover:bg-[var(--bg-tertiary)] transition-all text-[var(--text-muted)] hover:text-[var(--accent)]" data-ip="${device.ip}" title="View Details">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+            
+            // Update stats
+            updateStats(deviceList);
+            
+            // Bind detail buttons
+            $$('.detail-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => showDeviceDetail(e.currentTarget.dataset.ip));
+            });
+            
+            // Bind row click
+            $$('.device-row').forEach(row => {
+                row.addEventListener('click', (e) => {
+                    if (!e.target.closest('.detail-btn')) showDeviceDetail(row.dataset.ip);
+                });
+            });
+        }
+        
+        function getDeviceStatus(lastSeen) {
+            const diff = Math.floor((new Date() - new Date(lastSeen)) / 1000);
+            if (diff <= 10) return 'online';
+            if (diff <= 60) return 'recent';
+            return 'offline';
+        }
+        
+        function updateVendorFilter(deviceList) {
+            const select = $('#filterVendor');
+            const vendors = [...new Set(deviceList.map(d => d.vendor).filter(Boolean))].sort();
+            const current = select.value;
+            select.innerHTML = '<option value="">All Vendors</option>';
+            vendors.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v;
+                opt.textContent = v;
+                select.appendChild(opt);
+            });
+            select.value = current;
+        }
+        
+        function updateStats(deviceList) {
+            const now = new Date();
+            const online = deviceList.filter(d => getDeviceStatus(d.last_seen) === 'online').length;
+            const recent = deviceList.filter(d => {
+                const diff = Math.floor((now - new Date(d.last_seen)) / 1000);
+                return diff <= 60 && diff > 10;
+            }).length;
+            const newCount = deviceList.filter(d => d.first_seen && Math.floor((now - new Date(d.first_seen)) / 1000) < 60).length;
+            
+            $('#statTotal').textContent = deviceList.length;
+            $('#statOnline').textContent = online;
+            $('#statNew').textContent = newCount;
+            
+            // Calculate scan rate
+            if (scanStartTime) {
+                const elapsedMin = (now - scanStartTime) / 60000;
+                const rate = elapsedMin > 0 ? Math.round(deviceList.length / elapsedMin * 60) : 0;
+                $('#statRate').textContent = `${rate}/min`;
+            }
+        }
+
+        // ============ SCAN CONTROL ============
+        $('#startBtn').addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'start' })
+                });
+                if (res.ok) {
+                    $('#startBtn').disabled = true;
+                    $('#stopBtn').disabled = false;
+                    $('#scanStatus').textContent = 'Scanning...';
+                    $('#scanStatusDot').className = 'status-dot status-online animate-pulse-glow';
+                    $('#scanProgressContainer').classList.remove('hidden');
+                    animateProgressBar();
+                    scanStartTime = new Date();
+                    devicesThisMinute = 0;
+                    lastScanCount = 0;
+                }
+            } catch (e) { console.error(e); }
+        });
+        
+        $('#stopBtn').addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'stop' })
+                });
+                if (res.ok) {
+                    $('#startBtn').disabled = false;
+                    $('#stopBtn').disabled = true;
+                    $('#scanStatus').textContent = 'Idle';
+                    $('#scanStatusDot').className = 'status-dot status-offline';
+                    $('#scanProgressContainer').classList.add('hidden');
+                    $('#scanProgressBar').style.width = '0%';
+                    if (scanInterval) clearInterval(scanInterval);
+                }
+            } catch (e) { console.error(e); }
+        });
+        
+        function animateProgressBar() {
+            if (scanInterval) clearInterval(scanInterval);
+            let progress = 0;
+            scanInterval = setInterval(() => {
+                progress = (progress + 10) % 100;
+                $('#scanProgressBar').style.width = progress + '%';
+            }, 300);
+        }
+
+        // ============ SEARCH & FILTER ============
+        $('#searchInput').addEventListener('input', debounce(() => {
+            // Re-render with current devices
+            fetch('/api/devices').then(r => r.json()).then(d => updateDeviceTable(d.devices));
+        }, 150));
+        
+        $('#filterVendor, #filterStatus, #sortBy').forEach(el => {
+            el.addEventListener('change', () => {
+                fetch('/api/devices').then(r => r.json()).then(d => updateDeviceTable(d.devices));
+            });
+        });
+        
+        function debounce(fn, delay) {
+            let timeoutId;
+            return (...args) => {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => fn(...args), delay);
+            };
+        }
+
+        // ============ DEVICE DETAIL ============
+        function showDeviceDetail(ip) {
+            const device = devices.get(ip);
+            if (!device) return;
+            
+            const typeInfo = getDeviceTypeInfo(device.vendor);
+            const signal = formatSignal(device.rssi);
+            const status = getDeviceStatus(device.last_seen);
+            const statusClass = status === 'online' ? 'status-online' : status === 'recent' ? 'status-recent' : 'status-offline';
+            
+            const content = `
+                <div class="space-y-4">
+                    <div class="flex items-center gap-4 p-4 rounded-xl bg-[var(--bg-tertiary)]">
+                        <div class="device-type w-16 h-16 rounded-xl text-2xl" style="background: ${typeInfo.color}22; color: ${typeInfo.color};">${typeInfo.icon}</div>
+                        <div>
+                            <p class="font-mono text-lg font-semibold">${escapeHtml(device.ip)}</p>
+                            <p class="text-sm text-[var(--text-secondary)]">${escapeHtml(device.mac)}</p>
+                            <span class="vendor-badge ${getVendorClass(device.vendor)} mt-1 inline-block">${escapeHtml(device.vendor || 'Unknown')}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="p-4 rounded-xl bg-[var(--bg-tertiary)]">
+                            <p class="text-xs text-[var(--text-muted)] uppercase tracking-wider">Hostname</p>
+                            <p class="font-mono text-sm mt-1">${escapeHtml(device.hostname || 'Not resolved')}</p>
+                        </div>
+                        <div class="p-4 rounded-xl bg-[var(--bg-tertiary)]">
+                            <p class="text-xs text-[var(--text-muted)] uppercase tracking-wider">SSID / Network</p>
+                            <p class="font-mono text-sm mt-1">${escapeHtml(device.ssid || 'Unknown')}</p>
+                        </div>
+                        <div class="p-4 rounded-xl bg-[var(--bg-tertiary)]">
+                            <p class="text-xs text-[var(--text-muted)] uppercase tracking-wider">Signal Strength</p>
+                            <div class="flex items-center gap-2 mt-1">
+                                ${renderSignalBars(signal.bars)}
+                                <span class="font-mono text-sm ${signal.class}">${device.rssi !== undefined && device.rssi !== '' ? device.rssi + ' dBm' : 'Unknown'}</span>
+                            </div>
+                        </div>
+                        <div class="p-4 rounded-xl bg-[var(--bg-tertiary)]">
+                            <p class="text-xs text-[var(--text-muted)] uppercase tracking-wider">Device Type</p>
+                            <p class="font-medium text-sm mt-1 text-[${typeInfo.color}]">${typeInfo.type}</p>
+                        </div>
+                        <div class="p-4 rounded-xl bg-[var(--bg-tertiary)]">
+                            <p class="text-xs text-[var(--text-muted)] uppercase tracking-wider">First Seen</p>
+                            <p class="font-mono text-sm mt-1">${escapeHtml(device.first_seen || '—')}</p>
+                        </div>
+                        <div class="p-4 rounded-xl bg-[var(--bg-tertiary)]">
+                            <p class="text-xs text-[var(--text-muted)] uppercase tracking-wider">Last Seen</p>
+                            <p class="font-mono text-sm mt-1">${escapeHtml(device.last_seen)} <span class="text-[var(--text-muted)]">(${timeAgo(device.last_seen)})</span></p>
+                        </div>
+                        <div class="p-4 rounded-xl bg-[var(--bg-tertiary)]">
+                            <p class="text-xs text-[var(--text-muted)] uppercase tracking-wider">Status</p>
+                            <div class="flex items-center gap-2 mt-1">
+                                <span class="status-dot ${statusClass}"></span>
+                                <span class="capitalize">${status}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="pt-4 border-t border-[var(--border)] flex gap-2">
+                        <button class="flex-1 py-2 rounded-xl bg-[var(--accent)] text-[#0a0f1a] font-semibold hover:opacity-90 transition" onclick="copyToClipboard('${device.ip}')">
+                            Copy IP
+                        </button>
+                        <button class="flex-1 py-2 rounded-xl bg-[var(--bg-tertiary)] border border-[var(--border)] font-semibold hover:bg-[var(--accent-dim)] transition" onclick="copyToClipboard('${device.mac}')">
+                            Copy MAC
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            // Show in modal (desktop) or panel (mobile)
+            if (window.innerWidth >= 768) {
+                $('#modalContent').innerHTML = content;
+                $('#deviceModal').classList.remove('hidden');
+                $('#deviceModal').classList.add('flex');
+            } else {
+                $('#detailContent').innerHTML = content;
+                $('#detailPanel').classList.remove('translate-y-full');
+            }
+        }
+        
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text);
+            // Visual feedback
+            const btn = event.target.closest('button');
+            const original = btn.textContent;
+            btn.textContent = 'Copied!';
+            btn.style.background = 'var(--success)';
+            btn.style.color = 'white';
+            setTimeout(() => {
+                btn.textContent = original;
+                btn.style.background = '';
+                btn.style.color = '';
+            }, 1500);
+        }
+        
+        $('#closeModal').addEventListener('click', () => {
+            $('#deviceModal').classList.add('hidden');
+            $('#deviceModal').classList.remove('flex');
+        });
+        
+        $('#closeDetail').addEventListener('click', () => {
+            $('#detailPanel').classList.add('translate-y-full');
+        });
+        
+        $('#deviceModal').addEventListener('click', (e) => {
+            if (e.target === $('#deviceModal')) {
+                $('#deviceModal').classList.add('hidden');
+                $('#deviceModal').classList.remove('flex');
+            }
+        });
+
+        // ============ EXPORT CSV ============
+        $('#exportBtn').addEventListener('click', () => {
+            const headers = ['IP', 'MAC', 'Vendor', 'Type', 'SSID', 'Signal (dBm)', 'Hostname', 'First Seen', 'Last Seen'];
+            const rows = Array.from(devices.values()).map(d => [
+                d.ip, d.mac, d.vendor || '', getDeviceTypeInfo(d.vendor).type,
+                d.ssid || '', d.rssi || '', d.hostname || '', d.first_seen || '', d.last_seen
+            ]);
+            const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `netcut-devices-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        // ============ TABLE SORT HEADERS ============
+        $$('#deviceTable thead th[data-sort]').forEach(th => {
+            th.addEventListener('click', () => {
+                $('#sortBy').value = th.dataset.sort;
+                fetch('/api/devices').then(r => r.json()).then(d => updateDeviceTable(d.devices));
+            });
+        });
+
+        // ============ FOOTER TIME ============
+        function updateFooterTime() {
+            $('#footerTime').textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+        }
+        setInterval(updateFooterTime, 1000);
+
+        // ============ NETWORK INFO ============
+        async function loadNetworkInfo() {
+            try {
+                const res = await fetch('/api/network-info');
+                if (res.ok) {
+                    const data = await res.json();
+                    $('#networkInfo').textContent = data.subnet || data.network || 'Local Network';
+                }
+            } catch (e) {
+                $('#networkInfo').textContent = 'Local Network';
+            }
+        }
+
+        // ============ INIT ============
+        initTheme();
+        connectWebSocket();
+        loadNetworkInfo();
+        updateFooterTime();
+        
+        // Initial load
+        fetch('/api/devices').then(r => r.json()).then(d => updateDeviceTable(d.devices));
+        
+        // Store devices reference for export
+        const originalUpdate = updateDeviceTable;
+        updateDeviceTable = (list) => {
+            devices.clear();
+            list.forEach(d => devices.set(d.ip, d));
+            originalUpdate(list);
+        };
+    </script>
+</body>
+</html>
